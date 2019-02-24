@@ -14,7 +14,7 @@ mode: train
 name: ERFnet
 print_step: False
 reset-optimizer: False
-resume: False
+resume: True
 rmdistort: False
 save_dir: save/ERFnet
 weighing: enet
@@ -23,5 +23,5 @@ width: 1024
 workers: 10
 
 BEST VALIDATION
-Epoch: 10
-Mean IoU: 0.3691464369079
+Epoch: 120
+Mean IoU: 0.5733579159377676
