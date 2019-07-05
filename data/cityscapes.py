@@ -4,10 +4,12 @@ import torch.utils.data as data
 from . import utils
 import torchvision.transforms.functional as TF
 import random
+import numpy as np
+from . import autoaugment
+# from . import augment
 
 class Cityscapes(data.Dataset):
     """Cityscapes dataset https://www.cityscapes-dataset.com/.
-
     Keyword arguments:
     - root_dir (``string``): Root directory path.
     - mode (``string``): The type of dataset: 'train' for training set, 'val'
@@ -20,23 +22,19 @@ class Cityscapes(data.Dataset):
     path. By default ``default_loader`` is used.
     """
     #dataset root folders
-    train_folder = "Cityscapes/leftImg8bit_trainvaltest/leftImg8bit/train"
-    train_lbl_folder = "Cityscapes/gtFine_trainvaltest/gtFine/train"
-    val_folder = "Cityscapes/leftImg8bit_trainvaltest/leftImg8bit/val"
-    val_lbl_folder = "Cityscapes/gtFine_trainvaltest/gtFine/val"
+    train_folder = "20_class_ss/Cityscapes/Train/Images"
+    train_lbl_folder = "20_class_ss/Cityscapes/Train/Labels"
+    val_folder = "20_class_ss/Cityscapes/Val/Images"
+    val_lbl_folder = "20_class_ss/Cityscapes/Val/Labels"
     test_folder = val_folder
     test_lbl_folder = val_lbl_folder
     img_extension = '.png'
     lbl_name_filter = 'labelIds'
     # The values associated with the 35 classes
-    full_classes = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-                    17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
-                    32, 33, -1)
+    full_classes = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, -1)
     # The values above are remapped to the following
-    new_classes = (0, 0, 0, 0, 0, 0, 0, 1, 2, 0, 0, 3, 4, 5, 0, 0, 0, 6, 0, 7,
-                   8, 9, 10, 11, 12, 13, 14, 15, 16, 0, 0, 17, 18, 19, 0)
-    # new_classes = (0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    #                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    new_classes =  (0, 0, 0, 0, 0, 0, 0, 1, 2, 0, 0, 3, 4, 5, 0, 0, 0, 6, 0, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 0, 0, 17, 18, 19, 0)
+    # new_classes = (0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
     color_encoding = OrderedDict([
             ('unlabeled', (0, 0, 0)),
@@ -119,17 +117,24 @@ class Cityscapes(data.Dataset):
             raise RuntimeError("Unexpected dataset mode. Supported modes are: train, val and test")
 
         img, label = self.loader(data_path, label_path)
-        img = img.convert('RGB')
-        
-
+        if img.mode == 'RGBA':
+            img = img.convert('RGB')
+    
         # Remap class labels
-        label = utils.remap(label, self.full_classes, self.new_classes)
-        
-        # Random vertical flipping
-        # if random.random() > 0.5:
-        #     img = TF.vflip(img)
-        #     label = TF.vflip(label)
+        # label = utils.remap(label, self.full_classes, self.new_classes)
+        # if self.mode.lower() == 'train':
+        #     #Random horizontal flipping
+        #     if random.random() > 0.5:
+        #         # print('we hflipping')
+        #         img = TF.hflip(img)
+        #         label = TF.hflip(label)
 
+        #     if random.random() < 0.5:
+        #         # print('we autoaugmenting')
+        #         policy = autoaugment.ImageNetPolicy()
+        #         img = policy(img)
+
+        
         if self.transform is not None:
             img = self.transform(img)
 

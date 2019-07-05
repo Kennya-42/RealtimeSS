@@ -38,16 +38,23 @@ class Train():
         self.metric.reset()
         self.model.train()
         for step, batch_data in enumerate(self.data_loader):
-            inputs, labels = batch_data 
-            # print(inputs.size())                       
-            # inputs, labels = Variable(inputs), Variable(labels)
-            # utils.imshow_batch(inputs, labels)
-
+            inputs, labels = batch_data              
+            inputs, labels = Variable(inputs), Variable(labels)
+            # print(inputs[0].shape, labels[0].shape)
+            # utils.imshow_single(inputs[0], labels[0])
+            
             if self.use_cuda:
                 inputs = inputs.cuda()
                 labels = labels.cuda()
             # Forward propagation
             outputs = self.model(inputs)
+            # _, predictions = torch.max(outputs.data, 1)
+            
+            # label_to_rgb = transforms.Compose([utils.LongTensorToRGBPIL(None),transforms.ToTensor()])
+            # color_predictions = utils.batch_transform(predictions.cpu(), label_to_rgb)
+
+            # utils.imshow_batch(inputs.data.cpu(), color_predictions)
+
             # Loss computation
             loss = self.criterion(outputs, labels)
             # Backpropagation

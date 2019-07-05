@@ -19,10 +19,11 @@ import utils
 from PIL import Image
 import time
 import numpy as np
-from torchviz import make_dot, make_dot_from_trace
 import matplotlib.pyplot as plt
 import glob
 import cv2
+from videopred import vidpred
+from frames2vid import frames2vid
 
 # Get the arguments
 args = get_arguments()
@@ -53,7 +54,7 @@ def load_dataset(dataset):
     print("Number of classes to predict:", num_classes)
     print("Train dataset size:", len(train_set))
     print("Validation dataset size:", len(val_set))
-    # Get a batch of samples to display
+    #Get a batch of samples to display
     if args.mode.lower() == 'test':
         images, labels = iter(test_loader).next()
     else:
@@ -63,16 +64,16 @@ def load_dataset(dataset):
     
     # Get class weights from the selected weighing technique
     print("Weighing technique:", args.weighing)
-    # print("Computing class weights...") 
-    # if args.weighing.lower() == 'enet':
-    #     class_weights = enet_weighing(train_loader, num_classes)
-    # elif args.weighing.lower() == 'mfb':
-    #     class_weights = median_freq_balancing(train_loader, num_classes)
-    # else:
-    #     class_weights = None
-    class_weights = np.array([ 0.0000,  3.9490, 13.2085,  4.2485, 36.9267, 34.0329, 30.3585, 44.1654,
-        38.5243,  5.7159, 32.2182, 16.3313, 30.7760, 46.8776, 11.1293, 44.1730,
-        44.8546, 44.9209, 47.9799, 41.5301])
+    print("Computing class weights...") 
+    if args.weighing.lower() == 'enet':
+        class_weights = enet_weighing(train_loader, num_classes)
+    elif args.weighing.lower() == 'mfb':
+        class_weights = median_freq_balancing(train_loader, num_classes)
+    else:
+        class_weights = None
+    # class_weights = np.array([ 0.0000,  3.9490, 13.2085,  4.2485, 36.9267, 34.0329, 30.3585, 44.1654,
+    #     38.5243,  5.7159, 32.2182, 16.3313, 30.7760, 46.8776, 11.1293, 44.1730,
+    #     44.8546, 44.9209, 47.9799, 41.5301])
     if class_weights is not None:
         class_weights = torch.from_numpy(class_weights).float()
         # Set the weight of the unlabeled class to 0
@@ -86,12 +87,17 @@ def load_dataset(dataset):
 def train(train_loader, val_loader, class_weights, class_encoding):
     print("Training...")
     num_classes = len(class_encoding)
+    #IF MODEL ==ERFNet
     model = ERFNet(num_classes)
     criterion = nn.CrossEntropyLoss(weight=class_weights)
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
-    # Learning rate decay scheduler
-    lr_updater = lr_scheduler.StepLR(optimizer, args.lr_decay_epochs, args.lr_decay)
-
+    
+    if args.transfer_learn:
+        print('transfer learn: True')
+        model_params = utils.get_modelparams(model)#sets encoder to fixed
+        optimizer = optim.Adam(model_params, lr=args.learning_rate, weight_decay=args.weight_decay)
+    else:#get a fresh optimizer if not tranfer learning
+        optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+    
     # Evaluation metric
     if args.ignore_unlabeled:
         ignore_index = list(class_encoding).index('unlabeled')
@@ -104,9 +110,12 @@ def train(train_loader, val_loader, class_weights, class_encoding):
         model = model.cuda()
         criterion = criterion.cuda()
 
-    # Optionally resume from a checkpoint
+    # Learning rate decay scheduler
+    lr_updater = lr_scheduler.StepLR(optimizer, args.lr_decay_epochs, args.lr_decay)
+
+    #resume from a checkpoint
     if args.resume:
-        model, optimizer, start_epoch, best_miou, val_miou, train_miou, val_loss, train_loss = utils.load_checkpoint( model, optimizer, args.save_dir, args.name, True)
+        model, optimizer, start_epoch, best_miou, val_miou, train_miou, val_loss, train_loss = utils.load_checkpoint( model,optimizer, args.save_dir, args.name,args.reset_optimizer)
         print("Resuming from model: Start epoch = {0} | Best mean IoU = {1:.4f}".format(start_epoch, best_miou))
     else:
         start_epoch = 0
@@ -115,26 +124,30 @@ def train(train_loader, val_loader, class_weights, class_encoding):
         train_miou = []
         val_loss = []
         train_loss = []
-    
+
+    if args.transfer_learn:
+        start_epoch = 0
+        best_miou = 0
+        val_miou = []
+        train_miou = []
+        val_loss = []
+        train_loss = []
+
     # Start Training
     train = Train(model, train_loader, optimizer, criterion, metric, use_cuda)
     val = Test(model, val_loader, criterion, metric, use_cuda)
-    
+    loss = 1.0
+    miou = 0.0   
     for epoch in range(start_epoch, args.epochs):
         print(">> [Epoch: {0:d}] Training".format(epoch))
         lr_updater.step()
-        epoch_loss, (iou, miou) = train.run_epoch(args.print_step)
-        print(">> [Epoch: {0:d}] Avg. loss: {1:.4f} | Mean IoU: {2:.4f}".format(epoch, epoch_loss, miou))
-        train_loss.append(epoch_loss)
-        train_miou.append(miou)
-
+        epoch_loss, (iou, tmiou) = train.run_epoch(args.print_step)
+        print(">> [Epoch: {0:d}] Avg. loss: {1:.4f} | Mean IoU: {2:.4f}".format(epoch, epoch_loss, tmiou))
         #preform a validation test
         if (epoch + 1) % 10 == 0 or epoch + 1 == args.epochs:
             print(">>>> [Epoch: {0:d}] Validation".format(epoch))
             loss, (iou, miou) = val.run_epoch(args.print_step)
             print(">>>> [Epoch: {0:d}] Avg. loss: {1:.4f} | Mean IoU: {2:.4f}".format(epoch, loss, miou))
-            val_loss.append(loss)
-            val_miou.append(miou)
             # Print per class IoU on last epoch or if best iou
             if epoch + 1 == args.epochs or miou > best_miou:
                 for key, class_iou in zip(class_encoding.keys(), iou):
@@ -143,7 +156,12 @@ def train(train_loader, val_loader, class_weights, class_encoding):
             if miou > best_miou:
                 print("Best model thus far. Saving...")
                 best_miou = miou
-                utils.save_checkpoint(model, optimizer, epoch + 1, best_miou, val_miou, train_miou, val_loss, train_loss, args)
+                #utils.save_checkpoint(model, optimizer, epoch + 1, best_miou, val_miou, train_miou, val_loss, train_loss, args)
+
+        train_loss.append(epoch_loss)
+        train_miou.append(tmiou)
+        val_loss.append(loss)
+        val_miou.append(miou)
 
     return model, train_loss, train_miou, val_loss, val_miou
 
@@ -177,13 +195,8 @@ def video():
     print('testing from video')
     cameraWidth = 1920
     cameraHeight = 1080
-    cameraMatrix = np.matrix([[1.3878727764994030e+03, 0,    cameraWidth/2],
-    [0,    1.7987055172413220e+03,   cameraHeight/2],
-    [0,    0,    1]])
-    
-    distCoeffs = np.matrix([-5.8881725390917083e-01, 5.8472404395779809e-01,
-    -2.8299599929891900e-01, 0])
-    
+    cameraMatrix = np.matrix([[1.3878727764994030e+03, 0,    cameraWidth/2],[0,    1.7987055172413220e+03,   cameraHeight/2],[0,    0,    1]])
+    distCoeffs = np.matrix([-5.8881725390917083e-01, 5.8472404395779809e-01,-2.8299599929891900e-01, 0])
     vidcap = cv2.VideoCapture('test_content/testvid.webm')
     success = True
     i=0
@@ -252,28 +265,35 @@ def single():
     img = Image.open('test_content/rit_snow_0.png').convert('RGB')
 
     class_encoding = color_encoding = OrderedDict([
-            ('unlabeled', (0, 0, 0)),
-            ('road', (128, 64, 128)),
-            ('sidewalk', (244, 35, 232)),
-            ('building', (70, 70, 70)),
-            ('wall', (102, 102, 156)),
+            ('unlabeled', (0, 0, 0)),               #0
+            ('road', (128, 64, 128)),               #1
+            ('sidewalk', (244, 35, 232)),           #2
+            ('building', (70, 70, 70)),             #3
+            ('wall', (102, 102, 156)),              #4
             ('fence', (190, 153, 153)),
             ('pole', (153, 153, 153)),
             ('traffic_light', (250, 170, 30)),
             ('traffic_sign', (220, 220, 0)),
             ('vegetation', (107, 142, 35)),
-            ('terrain', (152, 251, 152)),
+            ('terrain', (152, 251, 152)),           #10
             ('sky', (70, 130, 180)),
             ('person', (220, 20, 60)),
             ('rider', (255, 0, 0)),
-            ('car', (0, 0, 142)),
+            ('car', (0, 0, 142)),                   #14
             ('truck', (0, 0, 70)),
             ('bus', (0, 60, 100)),
             ('train', (0, 80, 100)),
             ('motorcycle', (0, 0, 230)),
             ('bicycle', (119, 11, 32)) ])
 
-
+    # label_to_rgb = transforms.Compose([utils.LongTensorToRGBPIL(class_encoding),transforms.ToTensor()])
+    # label = utils.PILToLongTensor()(label)
+    # color_predictions = utils.batch_transform(label, label_to_rgb)
+    # plt.subplot(2,1,1)
+    # plt.imshow(img)
+    # plt.subplot(2,1,2)
+    # plt.imshow(color_predictions)
+    
     num_classes = len(class_encoding)
     model = ERFNet(num_classes)
     model_path = os.path.join(args.save_dir, args.name)
@@ -305,15 +325,21 @@ if __name__ == '__main__':
         video()
     elif args.mode.lower() == 'single':
         single()
+    elif args.mode.lower() == 'vidpred':
+        vidpred(args)
+    elif args.mode.lower() == 'frames2vid':
+        frames2vid(args)
     else:
         # Fail fast if the saving directory doesn't exist
-        assert os.path.isdir(            args.dataset_dir), "The directory \"{0}\" doesn't exist.".format(args.dataset_dir)
-        assert os.path.isdir(            args.save_dir), "The directory \"{0}\" doesn't exist.".format(args.save_dir)
+        assert os.path.isdir( args.dataset_dir), "The directory \"{0}\" doesn't exist.".format(args.dataset_dir)
+        assert os.path.isdir( args.save_dir), "The directory \"{0}\" doesn't exist.".format(args.save_dir)
         # Import the requested dataset
         if args.dataset.lower() == 'camvid':
             from data import CamVid as dataset
         elif args.dataset.lower() == 'cityscapes':
             from data import Cityscapes as dataset
+        elif args.dataset.lower() == 'kitti':
+            from data import Kitti as dataset
         else:
             raise RuntimeError("\"{0}\" is not a supported dataset.".format(args.dataset))
         
@@ -326,13 +352,14 @@ if __name__ == '__main__':
             plt.plot(tmiou,label="train miou")
             plt.plot(vl,label="val loss")
             plt.plot(vmiou,label="val miou")
-            plt.legend()
+            plt.legend() 
             plt.xlabel("Epoch")
             plt.ylabel("loss/accuracy")
             plt.grid(True)
             plt.xticks()
             plt.savefig('./plots/train.png')
         elif args.mode.lower() == 'test':
+            print("test mode check code")
             num_classes = len(class_encoding)
             model = ENet(num_classes)
             if use_cuda:

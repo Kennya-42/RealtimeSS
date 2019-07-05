@@ -40,6 +40,15 @@ def imshow_batch(images, labels):
         ax2.imshow(lb)
         plt.show()
     
+def imshow_single(x,y):
+    x = (torchvision.utils.make_grid(x).numpy()*255).astype(np.uint8)
+    x = np.moveaxis(x, 0, -1)
+    plt.subplot(2,1,1)
+    plt.imshow(x)
+    plt.subplot(2,1,2)
+    plt.imshow(y)
+    plt.show()
+    
 def save_checkpoint(model, optimizer, epoch, miou, val_miou, train_miou, val_loss, train_loss, args):
     """Saves the model in a specified directory with a specified name.save
     Keyword arguments:
@@ -150,7 +159,31 @@ class LongTensorToRGBPIL(object):
     values, class names, and class colors.
     """
     def __init__(self, rgb_encoding):
-        self.rgb_encoding = rgb_encoding
+        if rgb_encoding is not None:
+            self.rgb_encoding = rgb_encoding
+        else:
+            self.rgb_encoding = OrderedDict([
+            ('unlabeled', (0, 0, 0)),               #0
+            ('road', (128, 64, 128)),               #1
+            ('sidewalk', (244, 35, 232)),           #2
+            ('building', (70, 70, 70)),             #3
+            ('wall', (102, 102, 156)),              #4
+            ('fence', (190, 153, 153)),
+            ('pole', (153, 153, 153)),
+            ('traffic_light', (250, 170, 30)),
+            ('traffic_sign', (220, 220, 0)),
+            ('vegetation', (107, 142, 35)),
+            ('terrain', (152, 251, 152)),           #10
+            ('sky', (70, 130, 180)),
+            ('person', (220, 20, 60)),
+            ('rider', (255, 0, 0)),
+            ('car', (0, 0, 142)),                   #14
+            ('truck', (0, 0, 70)),
+            ('bus', (0, 60, 100)),
+            ('train', (0, 80, 100)),
+            ('motorcycle', (0, 0, 230)),
+            ('bicycle', (119, 11, 32)) ])
+
     def __call__(self, tensor):
         """Performs the conversion from ``torch.LongTensor`` to a ``PIL image``
         Keyword arguments:
@@ -180,3 +213,13 @@ class LongTensorToRGBPIL(object):
 
         return ToPILImage()(color_tensor)
         
+def get_modelparams(model):
+    model_params = []
+    model_params.extend(model.parameters())
+    i=0
+    for param in model_params:
+        if i < 170:
+            param.requires_grad = False
+        i+=1
+    print('Number of Params: ',i)
+    return model_params
