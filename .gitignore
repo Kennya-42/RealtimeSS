@@ -74,6 +74,7 @@ target/
 .ipynb_checkpoints
 
 # pyenv
+        modified:   main.py
 .python-version
 
 # celery beat schedule file
@@ -112,3 +113,6 @@ venv.bak/
 *.png
 .vscode
 *.webm
+*.avi
+
+save/*

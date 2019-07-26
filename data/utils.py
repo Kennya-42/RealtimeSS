@@ -1,37 +1,27 @@
 import os
 from PIL import Image
 import numpy as np
+from collections import OrderedDict
+from torchvision.transforms import ToPILImage
+import torch
 
 def get_files(folder, name_filter=None, extension_filter=None):
-    """Helper function that returns the list of files in a specified folder
-    with a specified extension.
-    Keyword arguments:
-    - folder (``string``): The path to a folder.
-    - name_filter (```string``, optional): The returned files must contain
-    this substring in their filename. Default: None; files are not filtered.
-    - extension_filter (``string``, optional): The desired file extension.
-    Default: None; files are not filtered
-    """
+    
     if not os.path.isdir(folder):
         raise RuntimeError("\"{0}\" is not a folder.".format(folder))
-    # Filename filter: if not specified don't filter (condition always true);
-    # otherwise, use a lambda expression to filter out files that do not
-    # contain "name_filter"
+    
     if name_filter is None:
         name_cond = lambda filename: True
     else:
         name_cond = lambda filename: name_filter in filename
-    # Extension filter: if not specified don't filter (condition always true);
-    # otherwise, use a lambda expression to filter out files whose extension
-    # is not "extension_filter"
+
     if extension_filter is None:
         ext_cond = lambda filename: True
     else:
         ext_cond = lambda filename: filename.endswith(extension_filter)
 
     filtered_files = []
-    # Explore the directory tree to get files that contain "name_filter" and
-    # with extension "extension_filter"
+    
     for path, _, files in os.walk(folder):
         files.sort()
         for file in files:
@@ -71,68 +61,67 @@ def remap(image, old_values, new_values):
 
     return Image.fromarray(tmp)
 
-def enet_weighing(dataloader, num_classes, c=1.02):
-    """Computes class weights as described in the ENet paper:
-        w_class = 1 / (ln(c + p_class)),
-    where c is usually 1.02 and p_class is the propensity score of that
-    class:
-        propensity_score = freq_class / total_pixels.
-    References: https://arxiv.org/abs/1606.02147
+class LongTensorToRGBPIL(object):
+    """Converts a ``torch.LongTensor`` to a ``PIL image``.
+    The input is a ``torch.LongTensor`` where each pixel's value identifies the class.
     Keyword arguments:
-    - dataloader (``data.Dataloader``): A data loader to iterate over the
-    dataset.
-    - num_classes (``int``): The number of classes.
-    - c (``int``, optional): AN additional hyper-parameter which restricts
-    the interval of values for the weights. Default: 1.02.
+    - rgb_encoding (``OrderedDict``): An ``OrderedDict`` that relates pixel
+    values, class names, and class colors.
     """
-    class_count = 0
-    total = 0
-    for _, label in dataloader:
-        label = label.cpu().numpy()
-        # Flatten label
-        flat_label = label.flatten()
-        # Sum up the number of pixels of each class and the total pixel
-        # counts for each label
-        class_count += np.bincount(flat_label, minlength=num_classes)
-        total += flat_label.size
+    def __init__(self, rgb_encoding):
+        if rgb_encoding is not None:
+            self.rgb_encoding = rgb_encoding
+        else:
+            self.rgb_encoding = OrderedDict([
+            ('road', (128, 64, 128)),
+            ('sidewalk', (244, 35, 232)),
+            ('building', (70, 70, 70)),
+            ('wall', (102, 102, 156)),
+            ('fence', (190, 153, 153)),
+            ('pole', (153, 153, 153)),
+            ('traffic_light', (250, 170, 30)),
+            ('traffic_sign', (220, 220, 0)),
+            ('vegetation', (107, 142, 35)),
+            ('terrain', (152, 251, 152)),
+            ('sky', (70, 130, 180)),
+            ('person', (220, 20, 60)),
+            ('rider', (255, 0, 0)),
+            ('car', (0, 0, 142)),
+            ('truck', (0, 0, 70)),
+            ('bus', (0, 60, 100)),
+            ('train', (0, 80, 100)),
+            ('motorcycle', (0, 0, 230)),
+            ('bicycle', (119, 11, 32)),
+            ('unlabeled', (0, 0, 0))
+    ])
 
-    # Compute propensity score and then the weights for each class
-    propensity_score = class_count / total
-    class_weights = 1 / (np.log(c + propensity_score))
-    return class_weights
+    def __call__(self, tensor):
+        """Performs the conversion from ``torch.LongTensor`` to a ``PIL image``
+        Keyword arguments:
+        - tensor (``torch.LongTensor``): the tensor to convert
+        Returns:
+        A ``PIL.Image``.
+        """
+        # Check if label_tensor is a LongTensor
+        if not isinstance(tensor, torch.LongTensor):
+            raise TypeError("label_tensor should be torch.LongTensor. Got {}"
+                            .format(type(tensor)))
+        # Check if encoding is a ordered dictionary
+        if not isinstance(self.rgb_encoding, OrderedDict):
+            raise TypeError("encoding should be an OrderedDict. Got {}".format(
+                type(self.rgb_encoding)))
+        # label_tensor might be an image without a channel dimension, in this
+        # case unsqueeze it
+        if len(tensor.size()) == 2:
+            tensor.unsqueeze_(0)
+        color_tensor = torch.ByteTensor(3, tensor.size(1), tensor.size(2))
+        for index, (class_name, color) in enumerate(self.rgb_encoding.items()):
+            if index==19:
+                index = 255
+            # Get a mask of elements equal to index
+            mask = torch.eq(tensor, index).squeeze_()
+            # Fill color_tensor with corresponding colors
+            for channel, color_value in enumerate(color):
+                color_tensor[channel].masked_fill_(mask, color_value)
 
-def median_freq_balancing(dataloader, num_classes):
-    """Computes class weights using median frequency balancing as described
-    in https://arxiv.org/abs/1411.4734:
-        w_class = median_freq / freq_class,
-    where freq_class is the number of pixels of a given class divided by
-    the total number of pixels in images where that class is present, and
-    median_freq is the median of freq_class.
-    Keyword arguments:
-    - dataloader (``data.Dataloader``): A data loader to iterate over the
-    dataset.
-    whose weights are going to be computed.
-    - num_classes (``int``): The number of classes
-    """
-    class_count = 0
-    total = 0
-    for _, label in dataloader:
-        label = label.cpu().numpy()
-        # Flatten label
-        flat_label = label.flatten()
-        # Sum up the class frequencies
-        bincount = np.bincount(flat_label, minlength=num_classes)
-        # Create of mask of classes that exist in the label
-        mask = bincount > 0
-        # Multiply the mask by the pixel count. The resulting array has
-        # one element for each class. The value is either 0 (if the class
-        # does not exist in the label) or equal to the pixel count (if
-        # the class exists in the label)
-        total += mask * flat_label.size
-        # Sum up the number of pixels found for each class
-        class_count += bincount
-
-    # Compute the frequency and its median
-    freq = class_count / total
-    med = np.median(freq)
-    return med / freq
+        return ToPILImage()(color_tensor)

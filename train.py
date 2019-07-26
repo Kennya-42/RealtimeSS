@@ -5,56 +5,26 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torchvision.transforms as transforms
 import utils
+from collections import OrderedDict
 class Train():
-    """Performs the training of ``model`` given a training dataset data
-    loader, the optimizer, and the loss criterion.
-    Keyword arguments:
-    - model (``nn.Module``): the model instance to train.
-    - data_loader (``Dataloader``): Provides single or multi-process
-    iterators over the dataset.
-    - optim (``Optimizer``): The optimization algorithm.
-    - criterion (``Optimizer``): The loss criterion.
-    - metric (```Metric``): An instance specifying the metric to return.
-    - use_cuda (``bool``): If ``True``, the training is performed using
-    CUDA operations (GPU).
-    """
-
-    def __init__(self, model, data_loader, optim, criterion, metric, use_cuda):
+    def __init__(self, model, data_loader, optim, criterion, metric,lr_updater):
         self.model = model
         self.data_loader = data_loader
         self.optim = optim
         self.criterion = criterion
         self.metric = metric
-        self.use_cuda = use_cuda
+        self.lr_updater = lr_updater
 
-    def run_epoch(self, iteration_loss=False):
-        """Runs an epoch of training.
-        Keyword arguments:
-        - iteration_loss (``bool``, optional): Prints loss at every step.
-        Returns:
-        - The epoch loss (float).
-        """
+    def run_epoch(self, epoch, iteration_loss=False):
         epoch_loss = 0.0
         self.metric.reset()
         self.model.train()
         for step, batch_data in enumerate(self.data_loader):
-            inputs, labels = batch_data              
-            inputs, labels = Variable(inputs), Variable(labels)
-            # print(inputs[0].shape, labels[0].shape)
-            # utils.imshow_single(inputs[0], labels[0])
-            
-            if self.use_cuda:
-                inputs = inputs.cuda()
-                labels = labels.cuda()
-            # Forward propagation
+            inputs, labels = batch_data     
+            inputs, labels = Variable(inputs).cuda(), Variable(labels).cuda()
+            self.lr_updater(self.optim, step, epoch)
+            #Forward Propagation
             outputs = self.model(inputs)
-            # _, predictions = torch.max(outputs.data, 1)
-            
-            # label_to_rgb = transforms.Compose([utils.LongTensorToRGBPIL(None),transforms.ToTensor()])
-            # color_predictions = utils.batch_transform(predictions.cpu(), label_to_rgb)
-
-            # utils.imshow_batch(inputs.data.cpu(), color_predictions)
-
             # Loss computation
             loss = self.criterion(outputs, labels)
             # Backpropagation

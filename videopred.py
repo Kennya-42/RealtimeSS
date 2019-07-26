@@ -2,6 +2,7 @@ import cv2
 from PIL import Image
 from collections import OrderedDict
 from models.erfnet import ERFNet
+from models.deeplab import DeepLab
 import torchvision.transforms as transforms
 import torchvision
 import utils
@@ -9,11 +10,13 @@ import os
 import numpy as np
 import time
 import torch
-#python3 main.py --mode vidpred --save-dir save/ERFnet/ERFnet_aug/ --width 1920 --height 1080
+from PIL import Image
+import utils
+import matplotlib.pyplot as plt
+
 def vidpred(args):
     start_time = time.time()
     vidcap = cv2.VideoCapture('test_content/testvid.webm')
-    out = cv2.VideoWriter('outpy.avi',cv2.VideoWriter_fourcc('M','J','P','G'), 10, (args.width,args.height),True)
     class_encoding = OrderedDict([
                         ('unlabeled', (0, 0, 0)),
                         ('road', (128, 64, 128)),
@@ -35,51 +38,36 @@ def vidpred(args):
                         ('train', (0, 80, 100)),
                         ('motorcycle', (0, 0, 230)),
                         ('bicycle', (119, 11, 32)) ])
-    model = ERFNet(len(class_encoding)).cuda()
+    if args.model.lower() == 'erfnet':
+        print("Model Arch: ERFnet")
+        model = ERFNet(num_classes).cuda()
+    else:
+        print("Model Arch: DeeplabV3+")
+        model = DeepLab(backbone='resnet', output_stride=8, num_classes=20,freeze_bn=True).cuda()
+
     checkpoint = torch.load(os.path.join(args.save_dir, args.name))
     model.load_state_dict(checkpoint['state_dict'])
-    for j in range(500):
-        if j%10 ==0:
-            print(j)
-        images = get_batch(args.batch_size,vidcap,args)
-        if images is None:
-            break
-        with torch.no_grad():
-            images = images.cuda()
-            predictions = model(images)
-            del images
-        _, predictions = torch.max(predictions.data, 1)
-        label_to_rgb = transforms.Compose([utils.LongTensorToRGBPIL(class_encoding),transforms.ToTensor()])
-        lb = utils.batch_transform(predictions.cpu(), label_to_rgb)
-        del predictions
-        #cast as numpy from tensor
-        outpred = lb.numpy()
-        #move color channel to back for cv2
-        outpred = np.moveaxis(outpred, 1, -1)
-        outpred = (outpred*255).astype(np.uint8)
-        for i in range(args.batch_size):
-            cv2.imshow('image',outpred[i,:,:,:])
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
-            out.write(outpred[i,:,:,:])
-    elapsed_time = time.time() - start_time
-    print('Time: ',elapsed_time)
-
-def get_batch(batchsize,vidcap,args):
-    index = 0
-    images = []
-    while index < batchsize:
-        # print(index)
-        index += 1
-        success,img = vidcap.read()
-        if not success:
-            return None
-        img = cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
+    sucess = True
+    while sucess:
+        sucess, img = vidcap.read()
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = Image.fromarray(img)
         img = img.resize((args.width, args.height), Image.BICUBIC)
-        img = np.array(img)
-        img = np.moveaxis(img, 2, 0)
-        images.append(img)
-    images = np.array(images)
-    images = torch.from_numpy(images).type(torch.FloatTensor)
-    return images
+        images = transforms.ToTensor()(img)
+        torch.reshape(images, (1, 3, args.width, args.height))
+        images= images.unsqueeze(0)
+        with torch.no_grad():
+            images = images.cuda()
+            predictions = model(images) 
+            _, predictions = torch.max(predictions.data, 1)
+            label_to_rgb = transforms.Compose([utils.LongTensorToRGBPIL(class_encoding),transforms.ToTensor()])
+            predictions = utils.LongTensorToRGBPIL(class_encoding)(predictions.cpu())
+            f, axarr = plt.subplots(2,1)
+            axarr[0].imshow(img)
+            axarr[1].imshow(predictions)
+            plt.show()
+
+    
+            
+
+
