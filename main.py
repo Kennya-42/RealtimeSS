@@ -36,7 +36,7 @@ def load_dataset(dataset):
     print("Save directory:", args.save_dir)
 
     train_set = dataset(root_dir=args.dataset_dir, mode='train', height=args.height, width=args.width)
-    train_loader = data.DataLoader(train_set, batch_size=args.batch_size, shuffle=False, num_workers=args.workers)
+    train_loader = data.DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
     val_set = dataset(root_dir=args.dataset_dir, mode='val',height=args.height, width=args.width)
     val_loader = data.DataLoader(val_set, batch_size=args.val_batch_size, shuffle=False, num_workers=args.workers)
     test_loader = val_loader
@@ -101,9 +101,15 @@ def train(train_loader, val_loader, class_weights, class_encoding):
     print("Training...")
     num_classes = len(class_encoding)
     # pick model
+    # print("Loading encoder pretrained in imagenet")
+    # from models.erfnet import ERFNet as ERFNet_imagenet
+    # pretrainedEnc = ERFNet_imagenet(1000)
+    # checkpnt = torch.load('save/erfnet_encoder_pretrained.pth')
+    # pretrainedEnc.load_state_dict(checkpnt['state_dict'])
+    # pretrainedEnc = next(pretrainedEnc.children()).features.encoder
     if args.model.lower() == 'erfnet':
         print("Model Name: ERFnet")
-        model = ERFNet(num_classes)
+        model = ERFNet(num_classes,pretrainedEnc)
         train_params = model.parameters()
     else:
         print("Model Name: DeeplabV3+")
@@ -130,7 +136,6 @@ def train(train_loader, val_loader, class_weights, class_encoding):
 
     model = model.cuda()
     criterion = criterion.cuda()
-
     # Learning rate decay scheduler
     # cosine decay, linear ramp up to higher LR
     # lr_updater = lr_scheduler.StepLR(optimizer, args.lr_decay_epochs, args.lr_decay)
@@ -282,6 +287,8 @@ if __name__ == '__main__':
             from data import Cityscapes as dataset
         elif args.dataset.lower() == 'kitti':
             from data import Kitti as dataset
+        elif args.dataset.lower() == 'imagenet':
+            from data import Imagenet as dataset
         else:
             raise RuntimeError("\"{0}\" is not a supported dataset.".format(args.dataset))
         

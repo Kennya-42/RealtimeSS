@@ -83,6 +83,9 @@ class Encoder(nn.Module):
 
         #only for encoder mode:
         self.output_conv = nn.Conv2d(128, num_classes, 1, stride=1, padding=0, bias=True)
+        self.extralayer1 = nn.MaxPool2d(2, stride=2)
+        self.extralayer2 = nn.AvgPool2d(14,1,0)
+        self.linear = nn.Linear(128, num_classes)
 
     def forward(self, input, predict=False):
         output = self.initial_block(input)
@@ -91,7 +94,11 @@ class Encoder(nn.Module):
             output = layer(output)
 
         if predict:
-            output = self.output_conv(output)
+            # output = self.output_conv(output)
+            output = self.extralayer1(output)
+            output = self.extralayer2(output)
+            output = output.view(output.size(0), 128)
+            output = self.linear(output)
 
         return output
 
@@ -135,19 +142,23 @@ class Decoder (nn.Module):
 
 
 class ERFNet(nn.Module):
-    def __init__(self, num_classes, encoder=None):  #use encoder to pass pretrained encoder
+    def __init__(self, num_classes, encoder=None, only_encode=False):  #use encoder to pass pretrained encoder
         super().__init__()
-
+        self.only_encode = only_encode
         if (encoder == None):
             self.encoder = Encoder(num_classes)
         else:
             self.encoder = encoder
         self.decoder = Decoder(num_classes)
 
-    def forward(self, input, only_encode=False):
-        if only_encode:
-            return self.encoder.forward(input, predict=True)
+    def forward(self, input):
+        if self.only_encode:
+            # print("Feat input: ", input.size())
+            output = self.encoder.forward(input, predict=True)
+            # print("Feat output: ", output.size())
+            return output
         else:
-            output = self.encoder(input)    #predict=False by default
-            return self.decoder.forward(output)
+            output = self.encoder(input)
+            output = self.decoder.forward(output)
+            return output
 
