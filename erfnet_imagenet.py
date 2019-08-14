@@ -95,14 +95,14 @@ class Features(nn.Module):
     def __init__(self):
         super().__init__()
         self.encoder = Encoder()
-        self.extralayer1 = nn.MaxPool2d(2, stride=2)
-        self.extralayer2 = nn.AvgPool2d(14,1,0)
+        # self.extralayer1 = nn.MaxPool2d(2, stride=2)
+        # self.extralayer2 = nn.AvgPool2d(14,1,0)
 
     def forward(self, input):
         #print("Feat input: ", input.size())
         output = self.encoder(input)
-        output = self.extralayer1(output)
-        output = self.extralayer2(output)
+        # output = self.extralayer1(output)
+        # output = self.extralayer2(output)
         #print("Feat output: ", output.size())
         return output
 

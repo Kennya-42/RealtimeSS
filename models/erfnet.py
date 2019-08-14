@@ -1,13 +1,7 @@
-# ERFNET full network definition for Pytorch
-# Sept 2017
-# Eduardo Romera
-#######################
-
 import torch
 import torch.nn as nn
 import torch.nn.init as init
 import torch.nn.functional as F
-
 
 class DownsamplerBlock (nn.Module):
     def __init__(self, ninput, noutput):
@@ -62,7 +56,7 @@ class non_bottleneck_1d (nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self):
         super().__init__()
         self.initial_block = DownsamplerBlock(3,16)
 
@@ -81,25 +75,11 @@ class Encoder(nn.Module):
             self.layers.append(non_bottleneck_1d(128, 0.1, 8))
             self.layers.append(non_bottleneck_1d(128, 0.1, 16))
 
-        #only for encoder mode:
-        self.output_conv = nn.Conv2d(128, num_classes, 1, stride=1, padding=0, bias=True)
-        self.extralayer1 = nn.MaxPool2d(2, stride=2)
-        self.extralayer2 = nn.AvgPool2d(14,1,0)
-        self.linear = nn.Linear(128, num_classes)
-
     def forward(self, input, predict=False):
         output = self.initial_block(input)
-
         for layer in self.layers:
             output = layer(output)
-
-        if predict:
-            # output = self.output_conv(output)
-            output = self.extralayer1(output)
-            output = self.extralayer2(output)
-            output = output.view(output.size(0), 128)
-            output = self.linear(output)
-
+        
         return output
 
 
@@ -114,51 +94,67 @@ class UpsamplerBlock (nn.Module):
         output = self.bn(output)
         return F.relu(output)
 
-class Decoder (nn.Module):
+class Decoder(nn.Module):
     def __init__(self, num_classes):
         super().__init__()
 
         self.layers = nn.ModuleList()
-
         self.layers.append(UpsamplerBlock(128,64))
         self.layers.append(non_bottleneck_1d(64, 0, 1))
         self.layers.append(non_bottleneck_1d(64, 0, 1))
-
         self.layers.append(UpsamplerBlock(64,16))
         self.layers.append(non_bottleneck_1d(16, 0, 1))
         self.layers.append(non_bottleneck_1d(16, 0, 1))
-
         self.output_conv = nn.ConvTranspose2d( 16, num_classes, 2, stride=2, padding=0, output_padding=0, bias=True)
 
     def forward(self, input):
         output = input
-
         for layer in self.layers:
             output = layer(output)
 
         output = self.output_conv(output)
+        return output
 
+class Classifier(nn.Module):
+    def __init__(self, num_classes):
+        super().__init__()
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.linear = nn.Linear(128, num_classes)
+
+    def forward(self, input):
+        output = self.avgpool(input)
+        output = torch.flatten(output, 1)
+        output = self.linear(output)
         return output
 
 
 class ERFNet(nn.Module):
-    def __init__(self, num_classes, encoder=None, only_encode=False):  #use encoder to pass pretrained encoder
+    def __init__(self, num_classes, encoder=None, classify=False):  #use encoder to pass pretrained encoder
         super().__init__()
-        self.only_encode = only_encode
+        self.classify = classify
+        if classify:
+            self.classifier = Classifier(num_classes)
+        else:
+            self.decoder = Decoder(num_classes)
+
         if (encoder == None):
-            self.encoder = Encoder(num_classes)
+            self.encoder = Encoder()
         else:
             self.encoder = encoder
-        self.decoder = Decoder(num_classes)
 
     def forward(self, input):
-        if self.only_encode:
-            # print("Feat input: ", input.size())
-            output = self.encoder.forward(input, predict=True)
-            # print("Feat output: ", output.size())
+        if self.classify:
+            output = self.encoder(input)
+            output = self.classifier(output)
             return output
         else:
             output = self.encoder(input)
-            output = self.decoder.forward(output)
+            output = self.decoder(output)
             return output
 
+if __name__ == "__main__":
+    model = ERFNet(1000,classify=True)
+    model.eval()
+    input = torch.rand(4, 3, 512, 512)
+    output = model(input)
+    print(output.size())

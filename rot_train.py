@@ -1,5 +1,6 @@
-from data import Imagenet as dataset
+from data import Rotloader as dataset
 from models.erfnet import ERFNet
+from erfnet_imagenet import ERFNet as ERFNet_imagenet
 import torch.nn as nn
 from train import Train
 from lr_scheduler import Cust_LR_Scheduler
@@ -7,10 +8,11 @@ import torch.utils.data as data
 import torch.optim as optim
 from torch.autograd import Variable
 import torch
+import math
 
 DATASET_DIR = "/home/ken/Documents/Dataset/"
 SAVE_PATH = '/home/ken/Documents/RealtimeSS/save'
-LEARNING_RATE = 0.05
+LEARNING_RATE = 0.1
 NUM_EPOCHS = 90
 BATCH_SIZE = 100 
 NUM_WORKERS = 10
@@ -66,7 +68,7 @@ def run_val_epoch(epoch,model,criterion,optimizer,lr_updater,data_loader):
             loss = criterion(outputs, labels)
             # Keep track of loss for current epoch
             epoch_loss += loss.item()
-            metric.update( outputs.cpu(), labels.cpu())
+            metric.update( outputs, labels)
 
     acc = metric.get_accuracy()
     epoch_loss = epoch_loss / len(data_loader)
@@ -81,14 +83,13 @@ def save_model(model, optimizer, model_path,epoch,val_acc):
         
     torch.save(checkpoint, model_path)
     
-
 def main():
     train_set = dataset(root_dir=DATASET_DIR, mode='train')
     train_loader = data.DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS)
     val_set = dataset(root_dir=DATASET_DIR, mode='val')
     val_loader = data.DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
-    model = ERFNet(num_classes=1000,classify=True).cuda()
-    model_path = SAVE_PATH+'/erfnet_encoder.pth'
+    model = ERFNet(num_classes=4,only_encode=True).cuda()
+    model_path = SAVE_PATH+'/erfnet_encoder_rot.pth'
     criterion = nn.CrossEntropyLoss().cuda()
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-4)
     lr_updater = Cust_LR_Scheduler(mode='poly', base_lr=LEARNING_RATE, num_epochs=NUM_EPOCHS,iters_per_epoch=len(train_loader))

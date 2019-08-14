@@ -32,12 +32,6 @@ def get_files(folder, name_filter=None, extension_filter=None):
     return filtered_files
 
 def pil_loader(data_path, label_path):
-    """Loads a sample and label image given their path as PIL images.
-    Keyword arguments:
-    - data_path (``string``): The filepath to the image.
-    - label_path (``string``): The filepath to the ground-truth image.
-    Returns the image and the label as PIL images.
-    """
     data = Image.open(data_path)
     label = Image.open(label_path)
     return data, label
@@ -116,8 +110,8 @@ class LongTensorToRGBPIL(object):
             tensor.unsqueeze_(0)
         color_tensor = torch.ByteTensor(3, tensor.size(1), tensor.size(2))
         for index, (class_name, color) in enumerate(self.rgb_encoding.items()):
-            if index==19:
-                index = 255
+            # if index==19:
+            #     index = 255
             # Get a mask of elements equal to index
             mask = torch.eq(tensor, index).squeeze_()
             # Fill color_tensor with corresponding colors

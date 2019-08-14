@@ -1,18 +1,23 @@
-import os
-import torch
-import torch.utils.data as data
 import torchvision.transforms.functional as TF
-import random
-import PIL
-from PIL import Image, ImageOps
-import numpy as np
-# from . import autoaugment
 from . import custom_transforms as tr
 from . import utils
 from torchvision import transforms
 from collections import OrderedDict
-# from . import augment
+import torch.utils.data as data
+from PIL import Image, ImageOps
 import matplotlib.pyplot as plt
+import numpy as np
+import random
+import torch
+import os
+# import PIL
+# from . import augment
+# from . import autoaugment
+
+def pil_loader(data_path, label_path):
+    data = Image.open(data_path)
+    label = Image.open(label_path)
+    return data, label
 
 class Cityscapes(data.Dataset):
     #dataset root folders
@@ -24,8 +29,6 @@ class Cityscapes(data.Dataset):
     test_lbl_folder = val_lbl_folder
     img_extension = '.png'
     lbl_name_filter = 'labelTrainIds'
-    
-
     color_encoding = OrderedDict([
             ('road', (128, 64, 128)),
             ('sidewalk', (244, 35, 232)),
@@ -49,7 +52,7 @@ class Cityscapes(data.Dataset):
             ('unlabeled', (0, 0, 0))
     ])
 
-    def __init__(self, root_dir, mode='train', loader=utils.pil_loader,height=1024, width=2048):
+    def __init__(self, root_dir, mode='train', loader=pil_loader,height=1024, width=2048):
         self.root_dir = root_dir
         self.mode = mode
         self.loader = loader
@@ -82,7 +85,6 @@ class Cityscapes(data.Dataset):
             raise RuntimeError("Unexpected dataset mode. Supported modes are: train, val and test")
 
         img, label = self.loader(data_path, label_path)
-
         img = img.convert('RGB')
         label = label.convert('P')
         
@@ -92,18 +94,10 @@ class Cityscapes(data.Dataset):
         # f, axarr = plt.subplots(2,2)
         # axarr[0,0].imshow(img)
         # axarr[0,1].imshow(mask)
-        
-        # Data Augment
         # Mixup https://forums.fast.ai/t/mixup-data-augmentation/22764
         # PIL.Image.blend(im1, im2, alpha) #interpolate 2 images
-        # Random crop aspect ration 3/4,4/3 in 8% to 100%, then resize to 224
         # Scale hue, saturation, and brightness with coefficientsuniformly drawn from [0.6,1.4]
         # add PCA noise from normal dist N(0,0.1)
-
-        # if random.random() < 0.5:
-        #     policy = autoaugment.ImageNetPolicy()
-        #     img = policy(img)
-
         sample = {'image': img, 'label': label}
 
         if self.mode.lower() == 'train':
@@ -113,21 +107,14 @@ class Cityscapes(data.Dataset):
 
         img , label = sample['image'],sample['label']
         
-
-        # img = transforms.ToPILImage(mode='RGB')(img)
-        # label = utils.LongTensorToRGBPIL(None)(label.squeeze())
-        # axarr[1,0].imshow(img)
-        # axarr[1,1].imshow(label)
-        # plt.show()
-        # exit()
-
         return img, label
 
     
     def transform_tr(self,input):
         composed_transforms = transforms.Compose([
             tr.RandomHorizontalFlip(),
-            tr.Resize((1024, 512)),
+            tr.RandomCrop(self.width, self.height),
+            tr.Resize((self.width, self.height)),
             tr.RandomTranslation(),
             tr.ToTensor()
         ])
@@ -136,7 +123,7 @@ class Cityscapes(data.Dataset):
 
     def transform_val(self,input):
         composed_transforms = transforms.Compose([
-            tr.Resize((1024, 512)),
+            tr.Resize((self.width, self.height)),
             tr.ToTensor()
         ])
 
@@ -153,3 +140,17 @@ class Cityscapes(data.Dataset):
         else:
             raise RuntimeError("Unexpected dataset mode. Supported modes are: train, val and test")
 
+if __name__ == "__main__":
+    import utils
+    import custom_transforms as tr
+    train_set = Cityscapes(root_dir="/home/ken/Documents/Dataset/", mode='train',height=512, width=1024)
+    train_loader = data.DataLoader(train_set, batch_size=1, shuffle=False, num_workers=0)
+    timages, tlabels = iter(train_loader).next()
+    plt.imshow(tlabels.squeeze())
+    plt.show()
+    img = transforms.ToPILImage(mode='RGB')(timages[0])
+    label = utils.LongTensorToRGBPIL(None)(tlabels.squeeze())
+    f, axarr = plt.subplots(1,2)
+    axarr[0].imshow(img)
+    axarr[1].imshow(label)
+    plt.show()
