@@ -116,3 +116,4 @@ venv.bak/
 *.avi
 
 save/*
+model_test.py
