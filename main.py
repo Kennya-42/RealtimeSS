@@ -109,7 +109,7 @@ def train(train_loader, val_loader, class_weights, class_encoding):
     # pretrainedEnc = next(pretrainedEnc.children()).features.encoder
     if args.model.lower() == 'erfnet':
         print("Model Name: ERFnet")
-        model = ERFNet(num_classes,pretrainedEnc)
+        model = ERFNet(num_classes)
         train_params = model.parameters()
     else:
         print("Model Name: DeeplabV3+")

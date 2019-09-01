@@ -11,7 +11,7 @@ def get_arguments():
     parser.add_argument( "--batch-size",      type=int,   default=1,   help="The batch size. Default: 10")
     parser.add_argument( "--val-batch-size",  type=int,   default=1,   help="The batch size. Default: 10")
     parser.add_argument( "--workers",      type=int,            default=0,   help="Number of subprocesses to use for data loading. Default: 10")
-    parser.add_argument( "--epochs",          type=int,   default=300,  help="Number of training epochs. Default: 300")
+    parser.add_argument( "--epochs",          type=int,   default=500,  help="Number of training epochs. Default: 300")
     parser.add_argument( "--learning-rate",   type=float, default=0.0005, help="The learning rate. Default: 5e-4")
     parser.add_argument( "--lr-decay",        type=float, default=0.5,  help="The learning rate decay factor. Default: 0.5")
     parser.add_argument( "--lr-decay-epochs", type=int,   default=40,  help="The number of epochs before adjusting the learning rate. Default: 100")
@@ -27,6 +27,6 @@ def get_arguments():
     # Storage settings
     parser.add_argument( "--name",     type=str, default='ERFnet.pth',      help="Name given to the model when saving. Default: ERFNet")
     parser.add_argument( "--pretrain_name",     type=str, default='erfnet_encoder_pretrained.pth',      help="Name given to the model when saving. Default: ERFNet")
-    parser.add_argument( "--save-dir", type=str, default='save', help="The directory where models are saved. Default: save")
+    parser.add_argument( "--save-dir", type=str, default='save/ERFnet', help="The directory where models are saved. Default: save")
 
     return parser.parse_args()
